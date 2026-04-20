@@ -1,0 +1,29 @@
+# 环境配置（不提交真实凭据）
+.env
+.env.local
+.env.production
+
+# 运行时状态文件（自动生成，不提交）
+batch_run_states/
+link_registry.json
+input_message.txt
+tmp_msg.txt
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# 图片缓存
+.cache/
+
+# 运行时产物（脚本执行产生）
+scripts/tmp_forward/
+scripts/tmp_csv_publish/
+
+# macOS
+.DS_Store
+
+# Node（部分技能用）
+node_modules/

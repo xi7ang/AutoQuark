@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "defaults": {
+    "image": {
+      "enabled": true,
+      "engine": "bing",
+      "count": 3,
+      "candidates": 8,
+      "timeout_sec": 90,
+      "min_width": 400,
+      "min_height": 400
+    },
+    "telegram": {
+      "enabled": true,
+      "mode": "album"
+    },
+    "publish": {
+      "enabled": true
+    }
+  },
+  "items": [
+    {
+      "id": "dmwc1566",
+      "title": "大明王朝1566 4K 国语全集",
+      "url": "https://pan.quark.cn/s/xxxx",
+      "category": "tv",
+      "tags": ["历史", "国产剧"],
+      "repo": "movies",
+      "image": {
+        "keywords": [
+          "大明王朝1566 海报",
+          "大明王朝1566 剧照",
+          "Ming Dynasty 1566 poster"
+        ]
+      },
+      "telegram": {
+        "caption_extra": "经典历史剧资源"
+      }
+    },
+    {
+      "id": "csapp-book",
+      "title": "深入理解计算机系统 第3版 高清扫描版",
+      "url": "https://pan.quark.cn/s/yyyy",
+      "category": "book",
+      "tags": ["计算机", "教材"],
+      "repo": "book",
+      "image": {
+        "keywords": [
+          "深入理解计算机系统 封面",
+          "Computer Systems A Programmer's Perspective book cover"
+        ]
+      },
+      "telegram": {
+        "caption_extra": "适合系统学习"
+      }
+    }
+  ]
+}
