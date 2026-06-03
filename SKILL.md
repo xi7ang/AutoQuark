@@ -75,6 +75,16 @@ python3 scripts/mswnlz_publish.py \
 
 所有步骤幂等，基于 quark_url 的 MD5 前12位作为幂等键，存储于 `scripts/tmp_forward/{md5}/run_state.json`。中断后重跑自动续跑。
 
+## 飞书同步（可选）
+
+开启后，每个新资源会自动追加到飞书 Word 文档和电子表格：
+
+- **Word 文档**：站点介绍 + 12 分类导航（emoji 装饰） + 单条资源块（名称/标签/类型/简介/链接）
+- **Sheet 表格**：表头 = [资源名称、标签、类型、简介、链接、推送日期]
+- **首次运行**：自动创建文档并把 URL 写回 `secrets.env`
+- **幂等 / 去重**：checkpoint 跳过 + 按 quark_url 文档级去重，不重复写入
+- **依赖**：`FEISHU_ENABLED=true` + `lark-cli` 已 `config bind`
+
 ## 脚本说明
 
 | 脚本 | 作用 |
