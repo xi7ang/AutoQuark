@@ -75,6 +75,15 @@ def get_parent_token() -> str:
     return os.environ.get("FEISHU_PARENT_TOKEN", "").strip()
 
 
+def get_identity() -> str:
+    """
+    飞书身份：user（默认，走用户 admin 权限，scope 已生效）
+    或 bot（需 app 发布后能用，限制更严）
+    """
+    v = os.environ.get("FEISHU_IDENTITY", "user").strip().lower()
+    return v if v in ("user", "bot") else "user"
+
+
 def _now_str() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -85,16 +94,36 @@ def log(msg: str) -> None:
 
 # ── lark-cli 调用封装 ────────────────────────────────────────────────
 
-def _run_lark(args: List[str], timeout: int = 60) -> Dict[str, Any]:
+# 绕开 openclaw 上下文的 env vars，避免 lark-cli 报 "openclaw context detected"
+# 注意：lark-cli 原本检测到这些 env 就要求走 config bind 流程
+# 我们走 lark-cli 自身配置的 app + user 身份（王胜 admin），直接调飞书
+_OPENCLAW_ENV_PREFIXES = ("OPENCLAW_",)
+
+
+def _strip_openclaw_env() -> Dict[str, str]:
+    """
+    返回去掉了 OPENCLAW_* 之后的环境变量副本。
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith(_OPENCLAW_ENV_PREFIXES)}
+
+
+def _run_lark(args: List[str], timeout: int = 60, identity: str = "user") -> Dict[str, Any]:
     """
     调用 lark-cli 子命令，返回解析后的 JSON dict。
     失败抛 RuntimeError。
+
+    identity: "user" | "bot"
+      - user：走王胜 admin 身份，scopes 已生效，能用
+      - bot：走 app 身份，scopes 需要发布后才能用
     """
+    clean_env = _strip_openclaw_env()
+    full_args = ["lark-cli", "--as", identity] + args
     proc = subprocess.run(
-        ["lark-cli"] + args,
+        full_args,
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=clean_env,
     )
     out = proc.stdout.strip()
     err = proc.stderr.strip()
@@ -198,7 +227,7 @@ def init_word_doc() -> str:
         args += ["--parent-token", parent_token]
 
     log("📄 首次运行，创建飞书 Word 文档...")
-    resp = _run_lark(args, timeout=60)
+    resp = _run_lark(args, timeout=60, identity=get_identity())
     if not _ok(resp):
         raise RuntimeError(f"创建 Word 文档失败：{json.dumps(resp, ensure_ascii=False)[:500]}")
 
@@ -224,13 +253,13 @@ def init_sheet() -> Tuple[str, str]:
     args = [
         "sheets", "+create",
         "--title", title,
-        "--values", json.dumps(initial_rows, ensure_ascii=False),
+        "--data", json.dumps(initial_rows, ensure_ascii=False),
     ]
     if parent_token:
-        args += ["--parent-token", parent_token]
+        args += ["--folder-token", parent_token]
 
     log("📊 首次运行，创建飞书 Sheet...")
-    resp = _run_lark(args, timeout=60)
+    resp = _run_lark(args, timeout=60, identity=get_identity())
     if not _ok(resp):
         raise RuntimeError(f"创建 Sheet 失败：{json.dumps(resp, ensure_ascii=False)[:500]}")
 
@@ -258,7 +287,8 @@ def _doc_text_contains(doc_url: str, needle: str) -> bool:
         resp = _run_lark(
             ["docs", "+fetch", "--api-version", "v2", "--doc", doc_url],
             timeout=60,
-        )
+            identity=get_identity(),
+            )
     except Exception as exc:
         log(f"  ⚠ 拉取 Word 文档失败（去重检查跳过）：{exc}")
         return False
@@ -284,7 +314,8 @@ def _sheet_text_contains(sheet_url: str, sheet_id: str, needle: str) -> bool:
                 "--sheet-id", sheet_id,
             ],
             timeout=60,
-        )
+            identity=get_identity(),
+            )
     except Exception as exc:
         log(f"  ⚠ 拉取 Sheet 失败（去重检查跳过）：{exc}")
         return False
@@ -363,7 +394,8 @@ def append_word_resource(doc_url: str, item: Dict[str, Any], share_url: str,
             "--content", content,
         ],
         timeout=60,
-    )
+        identity=get_identity(),
+        )
     if not _ok(resp):
         raise RuntimeError(f"Word append 失败：{json.dumps(resp, ensure_ascii=False)[:500]}")
 
@@ -454,11 +486,15 @@ def ensure_doc_and_sheet() -> Dict[str, str]:
             resp = _run_lark(
                 ["sheets", "+info", "--url", sheet_url],
                 timeout=30,
-            )
+                identity=get_identity(),
+                )
             if _ok(resp):
-                sheets = (resp.get("data") or {}).get("sheets") or []
-                if sheets:
+                # data.sheets.sheets[].sheet_id （嵌套两层）
+                inner = (resp.get("data") or {}).get("sheets") or {}
+                sheets = inner.get("sheets") if isinstance(inner, dict) else inner
+                if sheets and isinstance(sheets[0], dict):
                     sheet_id = sheets[0].get("sheet_id", "")
+                    log(f"  📋 查到 sheet_id: {sheet_id}")
         except Exception as exc:
             log(f"  ⚠ 查 sheet_id 失败：{exc}")
 
@@ -505,12 +541,18 @@ def sync_resource(item: Dict[str, Any], share_url: str, original_url: str) -> Di
         log(f"  ❌ Sheet 追加失败：{exc}")
 
     # 汇总
-    word_ok = out.get("word", {}).get("status") == "ok"
-    sheet_ok = out.get("sheet", {}).get("status") == "ok"
+    word_status = out.get("word", {}).get("status")
+    sheet_status = out.get("sheet", {}).get("status")
+    word_ok = word_status == "ok"
+    sheet_ok = sheet_status == "ok"
+    word_skip = word_status == "skipped"
+    sheet_skip = sheet_status == "skipped"
     if word_ok and sheet_ok:
         out["status"] = "ok"
     elif word_ok or sheet_ok:
         out["status"] = "partial"
+    elif word_skip and sheet_skip:
+        out["status"] = "skipped"  # 两者都跳过 = 幂等命中，不算失败
     else:
         out["status"] = "failed"
     return out

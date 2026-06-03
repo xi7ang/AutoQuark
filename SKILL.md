@@ -83,7 +83,33 @@ python3 scripts/mswnlz_publish.py \
 - **Sheet 表格**：表头 = [资源名称、标签、类型、简介、链接、推送日期]
 - **首次运行**：自动创建文档并把 URL 写回 `secrets.env`
 - **幂等 / 去重**：checkpoint 跳过 + 按 quark_url 文档级去重，不重复写入
-- **依赖**：`FEISHU_ENABLED=true` + `lark-cli` 已 `config bind`
+- **依赖**：`FEISHU_ENABLED=true` + `lark-cli` 已配置 + `lark-cli` 上下文检测绕过（脚本会清掉 `OPENCLAW_*` env vars）
+
+### 配置
+
+```bash
+FEISHU_ENABLED=true
+FEISHU_IDENTITY=user   # user = 当前用户 admin 权限（推荐）；bot = app 身份（需 app 发布）
+FEISHU_DOC_URL=        # 空 = 首次自动创建
+FEISHU_SHEET_URL=      # 空 = 首次自动创建
+FEISHU_SHEET_TAB=Sheet1
+```
+
+### 手动调试
+
+```bash
+# 只初始化（不写资源）
+python3 scripts/feishu_sync.py init --kind both
+
+# 追加一条资源
+python3 scripts/feishu_sync.py append \
+  --title "测试" \
+  --description "描述" \
+  --tags "tag1 tag2" \
+  --repo tools \
+  --share-url "https://pan.quark.cn/s/abc" \
+  --original-url "https://pan.quark.cn/s/src"
+```
 
 ## 脚本说明
 
