@@ -801,11 +801,11 @@ def main() -> int:
         "steps": {
             "parse":     {"status": "ok"},
             "quark_save":  {"status": "pending"},
-            "feishu_doc":   {"status": "pending"},
             "quark_copy":  {"status": "pending"},
             "images":    {"status": "pending"},
             "publish":   {"status": "pending"},
             "telegram":  {"status": "pending"},
+            "feishu_doc":   {"status": "pending"},
         },
         "started_at": now_iso(),
         "finished_at": None,
@@ -839,32 +839,6 @@ def main() -> int:
     real_share_url = save_result["share_url"]
     dest_fid = save_result["fid"]
     result["steps"]["quark_save"] = {"status": "ok", **save_result}
-
-    # ── 步骤 2.6：飞书 Word + Sheet 同步（幂等）────────────────────
-    if is_step_done(cp, "feishu_doc"):
-        log(f"⏭ 跳过 feishu_doc（已执行）")
-        feishu_result = get_step_output(cp, "feishu_doc")
-    else:
-        feishu_result = {"status": "skipped"}
-        if feishu_enabled():
-            try:
-                feishu_result = feishu_sync_resource(
-                    {
-                        "title": item.title,
-                        "description": item.description,
-                        "tags": item.tags,
-                        "repo": args.repo,
-                    },
-                    real_share_url,
-                    item.quark_url,
-                )
-            except Exception as exc:
-                log(f"⚠ 飞书同步异常：{exc}")
-                feishu_result = {"status": "failed", "error": str(exc)}
-        else:
-            log("ℹ 飞书同步未启用（FEISHU_ENABLED=false），跳过")
-        update_checkpoint_step(work_dir, "feishu_doc", feishu_result)
-    result["steps"]["feishu_doc"] = feishu_result
 
     # ── 步骤 2.5：复制推广文件（幂等）────────────────────────────
     if is_step_done(cp, "quark_copy"):
@@ -932,11 +906,37 @@ def main() -> int:
         update_checkpoint_step(work_dir, "telegram", tg_result)
     result["steps"]["telegram"] = tg_result
 
+    # ── 步骤 6：飞书 Word + Sheet 同步（最后一步，幂等）────────────
+    if is_step_done(cp, "feishu_doc"):
+        log(f"⏭ 跳过 feishu_doc（已执行）")
+        feishu_result = get_step_output(cp, "feishu_doc")
+    else:
+        feishu_result = {"status": "skipped"}
+        if feishu_enabled():
+            try:
+                feishu_result = feishu_sync_resource(
+                    {
+                        "title": item.title,
+                        "description": item.description,
+                        "tags": item.tags,
+                        "repo": args.repo,
+                    },
+                    real_share_url,
+                    item.quark_url,
+                )
+            except Exception as exc:
+                log(f"⚠ 飞书同步异常：{exc}")
+                feishu_result = {"status": "failed", "error": str(exc)}
+        else:
+            log("ℹ 飞书同步未启用（FEISHU_ENABLED=false），跳过")
+        update_checkpoint_step(work_dir, "feishu_doc", feishu_result)
+    result["steps"]["feishu_doc"] = feishu_result
+
     # ── 标记完成 ────────────────────────────────────────────────
     from _common import save_checkpoint
     save_checkpoint(
         work_dir,
-        completed_steps=["parse", "quark_save", "feishu_doc", "quark_copy", "images", "publish", "telegram"],
+        completed_steps=["parse", "quark_save", "quark_copy", "images", "publish", "telegram", "feishu_doc"],
         step_outputs={}, parsed=parsed_dict, status="completed"
     )
 
@@ -944,11 +944,11 @@ def main() -> int:
 
     log(f"\n✅ 完成！ run_id={run_id} | repo={args.repo} | "
         f"quark={result['steps']['quark_save']['status']} | "
-        f"feishu={result['steps']['feishu_doc'].get('status')} | "
         f"copy={result['steps']['quark_copy']['status']} | "
         f"images={result['steps']['images']['status']} | "
         f"publish={result['steps']['publish'].get('status')} | "
-        f"telegram={result['steps']['telegram'].get('status')}")
+        f"telegram={result['steps']['telegram'].get('status')} | "
+        f"feishu={result['steps']['feishu_doc'].get('status')}")
 
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

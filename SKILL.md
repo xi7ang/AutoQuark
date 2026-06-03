@@ -79,10 +79,12 @@ python3 scripts/mswnlz_publish.py \
 
 开启后，每个新资源会自动追加到飞书 Word 文档和电子表格：
 
+- **位置**：在主流程**最后一步**（telegram 之后），失败不影响前面的 GitHub/TG 推送
 - **Word 文档**：站点介绍 + 12 分类导航（emoji 装饰） + 单条资源块（名称/标签/类型/简介/链接）
+  - 链接只展示 1 个：永久分享链接
 - **Sheet 表格**：表头 = [资源名称、标签、类型、简介、链接、推送日期]
 - **首次运行**：自动创建文档并把 URL 写回 `secrets.env`
-- **幂等 / 去重**：checkpoint 跳过 + 按 quark_url 文档级去重，不重复写入
+- **幂等 / 去重**：checkpoint 跳过 + 按 share_url 文档级去重，不重复写入
 - **依赖**：`FEISHU_ENABLED=true` + `lark-cli` 已配置 + `lark-cli` 上下文检测绕过（脚本会清掉 `OPENCLAW_*` env vars）
 
 ### 配置

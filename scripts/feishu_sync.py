@@ -355,8 +355,7 @@ def _format_word_block(item: Dict[str, Any], share_url: str, original_url: str,
         f'<p>🏷️ <b>标签：</b>{tags_str}</p>'
         f'<p>📂 <b>类型：</b>{_xml_escape(cat_label)}</p>'
         f'<p>📝 <b>简介：</b>{description or "(无简介)"}</p>'
-        f'<p>🔗 <b>链接：</b> <a href="{share_escaped}">👉 立即获取</a>'
-        f' ｜ <a href="{original_escaped}">原始夸克链接</a></p>'
+        f'<p>🔗 <b>链接：</b> <a href="{share_escaped}">👉 立即获取</a></p>'
         f'<p>📅 {_xml_escape(date_str)}</p>'
         f'<hr/>'
     )
@@ -381,8 +380,8 @@ def append_word_resource(doc_url: str, item: Dict[str, Any], share_url: str,
     date_str = _now_str()
     content = _format_word_block(item, share_url, original_url, date_str)
 
-    # 去重检查
-    if _doc_text_contains(doc_url, original_url):
+    # 去重检查：按 share_url 在文档中扫
+    if _doc_text_contains(doc_url, share_url):
         return {"status": "skipped", "reason": "already_appended", "doc_url": doc_url}
 
     log(f"  📄 追加到 Word：{item.get('title', '')[:30]}...")
@@ -438,8 +437,8 @@ def append_sheet_row(sheet_url: str, sheet_id: str, item: Dict[str, Any],
     date_str = _now_str()
     row = _format_sheet_row(item, share_url, date_str)
 
-    # 去重：按 title 简化判断
-    if _sheet_text_contains(sheet_url, sheet_id, str(item.get("title", ""))):
+    # 去重：按 share_url 判断（与 Word 一致，物理统一）
+    if _sheet_text_contains(sheet_url, sheet_id, share_url):
         return {"status": "skipped", "reason": "already_appended", "sheet_url": sheet_url}
 
     log(f"  📊 追加到 Sheet：{item.get('title', '')[:30]}...")
