@@ -26,6 +26,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -40,7 +41,7 @@ SKILL_ROOT = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_env_files, get_quark_root, get_mswnlz_root, work_dir_for_url, load_checkpoint, update_checkpoint_step, is_step_done, get_step_output
+from _common import load_env_files, get_quark_root, get_mswnlz_root, get_site_repo_dir, work_dir_for_url, load_checkpoint, update_checkpoint_step, is_step_done, get_step_output
 from image_search_adapter import fetch_images_for_item
 from telegram_album_notify import send_album_message, send_text_message
 import httpx
@@ -537,7 +538,7 @@ def github_publish(item: ParsedItem, repo: str, quark_url: str, share_url: str,
 
 # ── 步骤 5：Bot API 注册 ─────────────────────────────────────────────
 
-def call_bot_api(item: ParsedItem, share_url: str) -> Optional[str]:
+def call_bot_api(item: ParsedItem, share_url: str, detail_url: Optional[str] = None) -> Optional[str]:
     """
     向 @GoodStudyDayUpBot 注册资源，获取 start_link。
     """
@@ -551,6 +552,9 @@ def call_bot_api(item: ParsedItem, share_url: str) -> Optional[str]:
         "resource_link": share_url,
         "resource_hint": "",
     }
+
+    if detail_url:
+        payload["resource_detail_url"] = detail_url
 
     log(f"Bot API 注册：{item.title[:40]}...")
     try:
@@ -886,6 +890,34 @@ def main() -> int:
         update_checkpoint_step(work_dir, "publish", publish_result)
     result["steps"]["publish"] = publish_result
 
+    # ── 步骤 5 前置：获取详情页 ID（不阻塞）──────────────────
+    detail_url = None
+    if publish_result.get("status") == "ok":
+        try:
+            site_dir = get_site_repo_dir(require=True)
+            repo_dir = get_mswnlz_root(require=True) / args.repo
+            md_name = f"{args.month}.md"
+            src_md = repo_dir / md_name
+            dst_md = site_dir / "docs" / args.repo / md_name
+            if src_md.exists() and src_md.stat().st_size > 0:
+                dst_md.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(src_md), str(dst_md))
+                cp = subprocess.run(
+                    ["node", str(site_dir / "scripts/parse-resources.js")],
+                    cwd=str(site_dir), capture_output=True, text=True, timeout=60
+                )
+                if cp.returncode == 0:
+                    rj = site_dir / "docs/public/data/resources.json"
+                    if rj.exists():
+                        with open(rj, encoding="utf-8") as f:
+                            for r in json.load(f):
+                                if r.get("url") == real_share_url and r.get("category") == args.repo:
+                                    detail_url = f"https://pan.devmini.space/resource?c={args.repo}&id={r['id']}"
+                                    log(f"📄 详情页 URL：{detail_url}")
+                                    break
+        except Exception as exc:
+            log(f"⚠ 详情页 ID 解析异常（不阻塞）：{exc}")
+
     # ── 步骤 5：Bot 注册 + TG 推送（幂等）───────────────────────
     if is_step_done(cp, "telegram"):
         log(f"⏭ 跳过 telegram（已执行）")
@@ -894,7 +926,7 @@ def main() -> int:
     else:
         start_link = None
         try:
-            start_link = call_bot_api(item, real_share_url)
+            start_link = call_bot_api(item, real_share_url, detail_url=detail_url)
         except Exception as exc:
             log(f"⚠ Bot 注册异常：{exc}")
         try:
