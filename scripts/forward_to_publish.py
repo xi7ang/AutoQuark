@@ -26,7 +26,6 @@ import json
 import os
 import random
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -41,7 +40,7 @@ SKILL_ROOT = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import load_env_files, get_quark_root, get_mswnlz_root, get_site_repo_dir, work_dir_for_url, load_checkpoint, update_checkpoint_step, is_step_done, get_step_output
+from _common import load_env_files, get_quark_root, get_mswnlz_root, work_dir_for_url, load_checkpoint, update_checkpoint_step, is_step_done, get_step_output
 from image_search_adapter import fetch_images_for_item
 from telegram_album_notify import send_album_message, send_text_message
 import httpx
@@ -578,8 +577,7 @@ def call_bot_api(item: ParsedItem, share_url: str) -> Optional[str]:
 
 # ── 步骤 5b：构建 caption ──────────────────────────────────────────────
 
-def build_caption(item: ParsedItem, start_link: Optional[str],
-                  detail_url: Optional[str] = None) -> str:
+def build_caption(item: ParsedItem, start_link: Optional[str]) -> str:
     """
     构建 Telegram 消息 caption。
     格式：
@@ -587,8 +585,6 @@ def build_caption(item: ParsedItem, start_link: Optional[str],
       {description}
 
       💾 获取资源：👉 点我获取{title}👈（超链接 → start_link）
-
-      📄 详情页：pan.devmini.space（超链接 → detail_url）
     """
     tags_part = ""
     if item.tags:
@@ -608,10 +604,6 @@ def build_caption(item: ParsedItem, start_link: Optional[str],
         cta = f"🔗 夸克网盘：{escape_html(item.quark_url)}"
 
     caption_parts.extend(["", cta])
-
-    if detail_url:
-        caption_parts.append("")
-        caption_parts.append(f"📄 详情页：<a href=\"{escape_html(detail_url)}\">pan.devmini.space 查看</a>")
 
     caption = "\n".join(caption_parts)
     # Telegram caption 限制 1024 字符，caption 本身 900 字以内
@@ -894,50 +886,6 @@ def main() -> int:
         update_checkpoint_step(work_dir, "publish", publish_result)
     result["steps"]["publish"] = publish_result
 
-    # ── 步骤 4.5：获取详情页 ID（本地解析，不阻塞）─────────────
-    resource_id = None
-    if publish_result.get("status") == "ok":
-        try:
-            site_dir = get_site_repo_dir(require=True)
-            repo_dir = get_mswnlz_root(require=True) / args.repo
-            md_name = f"{args.month}.md"
-            src_md = repo_dir / md_name
-            dst_md = site_dir / "docs" / args.repo / md_name
-            if src_md.exists() and src_md.stat().st_size > 0:
-                dst_md.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(src_md), str(dst_md))
-                log(f"📄 已同步 {args.repo}/{md_name} 到站点仓库")
-                # 运行 parse-resources.js
-                parse_js = site_dir / "scripts/parse-resources.js"
-                cp = subprocess.run(
-                    ["node", str(parse_js)],
-                    cwd=str(site_dir),
-                    capture_output=True, text=True, timeout=60
-                )
-                if cp.returncode == 0:
-                    rj_path = site_dir / "docs/public/data/resources.json"
-                    if rj_path.exists():
-                        with open(rj_path, encoding="utf-8") as f:
-                            all_res = json.load(f)
-                        for r in all_res:
-                            if r.get("url") == real_share_url and r.get("category") == args.repo:
-                                resource_id = r["id"]
-                                break
-                        if resource_id is None:
-                            for r in all_res:
-                                if r.get("title") == item.title and r.get("category") == args.repo:
-                                    if r.get("url") and r["url"] == real_share_url:
-                                        resource_id = r["id"]
-                                        break
-                if resource_id is not None:
-                    log(f"✅ 资源详情页 ID：{resource_id}")
-                else:
-                    log("⚠ 未匹配到资源 ID，详情页链接将不显示")
-            else:
-                log(f"⚠ 源文件不存在或为空：{src_md}")
-        except Exception as exc:
-            log(f"⚠ 本地 ID 解析异常（不影响主流程）：{exc}")
-
     # ── 步骤 5：Bot 注册 + TG 推送（幂等）───────────────────────
     if is_step_done(cp, "telegram"):
         log(f"⏭ 跳过 telegram（已执行）")
@@ -950,10 +898,7 @@ def main() -> int:
         except Exception as exc:
             log(f"⚠ Bot 注册异常：{exc}")
         try:
-            detail_url = None
-            if resource_id is not None:
-                detail_url = f"https://pan.devmini.space/resource?c={args.repo}&id={resource_id}"
-            caption = build_caption(item, start_link, detail_url=detail_url)
+            caption = build_caption(item, start_link)
             tg_result = telegram_push(item, images, caption)
         except Exception as exc:
             log(f"⚠ Telegram 推送异常：{exc}")
